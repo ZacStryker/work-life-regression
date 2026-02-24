@@ -1,0 +1,638 @@
+{% extends "base.html" %}
+
+{% block title %}Longevity Prediction - Zac Stryker{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<style>
+.page-work-life-regression {
+    padding-bottom: 4rem;
+}
+
+/* ── controls bar (model toggle + re-run) ─────────────── */
+.controls-bar {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+.model-toggle {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+}
+.model-btn {
+    padding: 0.45rem 1rem;
+    background: var(--surface-light);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.model-btn:hover { border-color: #7c3aed; color: #a78bfa; }
+.model-btn.active {
+    background: rgba(124, 58, 237, 0.18);
+    border-color: #7c3aed;
+    color: #a78bfa;
+    font-weight: 600;
+}
+.model-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── re-run button ────────────────────────────────────── */
+.btn-rerun {
+    display: none;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 1rem;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+.btn-rerun:hover { border-color: #7c3aed; color: #a78bfa; }
+.btn-rerun.visible { display: inline-flex; }
+
+/* ── run status ───────────────────────────────────────── */
+.run-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+.run-status {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+}
+.run-status.visible { display: flex; }
+
+/* spinner */
+.spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+}
+.spinner.visible { display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── pipeline steps ───────────────────────────────────────── */
+.pipeline-steps {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border);
+}
+.step-chip {
+    padding: 0.25rem 0.65rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-family: 'JetBrains Mono', monospace;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+.step-chip.done {
+    background: rgba(124, 58, 237, 0.12);
+    border: 1px solid rgba(124, 58, 237, 0.35);
+    color: #a78bfa;
+}
+.step-chip .step-num {
+    font-size: 0.65rem;
+    opacity: 0.6;
+}
+
+/* ── results section ──────────────────────────────────────── */
+.results-section { display: none; }
+.results-section.visible { display: block; }
+
+/* ── metrics row ──────────────────────────────────────────── */
+.metrics-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.metric-badge {
+    flex: 1;
+    min-width: 180px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 1.1rem 1.25rem;
+    border: 1px solid var(--border);
+}
+.metric-badge .badge-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 0.4rem;
+}
+.metric-badge .badge-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    line-height: 1;
+    font-family: 'JetBrains Mono', monospace;
+}
+.metric-badge .badge-split {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.35rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+.metric-badge .badge-split strong { color: var(--text); }
+.metric-badge .split-divider { opacity: 0.4; }
+.metric-badge .badge-sub {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+    opacity: 0.7;
+}
+.metric-badge.purple .badge-value { color: #a78bfa; }
+.metric-badge.cyan   .badge-value { color: #00d4ff; }
+.metric-badge.pink   .badge-value { color: #f472b6; }
+.metric-badge.yellow .badge-value { color: #fbbf24; }
+
+/* ── charts grid ──────────────────────────────────────────── */
+.charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+@media (max-width: 768px) {
+    .charts-grid { grid-template-columns: 1fr; }
+}
+
+.viz-panel {
+    background: var(--surface);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    padding: 1.25rem;
+}
+.viz-panel-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+.chart-wrap {
+    position: relative;
+    height: 280px;
+}
+.chart-wrap-full {
+    position: relative;
+    height: 220px;
+}
+
+/* ── diagnostic images ────────────────────────────────────── */
+.diag-img {
+    width: 100%;
+    border-radius: 8px;
+    display: block;
+    margin-top: 0.5rem;
+    object-fit: contain;
+    max-height: 300px;
+}
+.lc-loading {
+    display: flex;
+    align-items: center;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    padding: 0.5rem 0;
+}
+
+/* ── eda section divider ──────────────────────────────────── */
+.section-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1.75rem 0 1.25rem;
+}
+.section-divider-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #a78bfa;
+    white-space: nowrap;
+}
+.section-divider-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+/* ── eda section ──────────────────────────────────────────── */
+.eda-section {
+    margin-top: 1.5rem;
+}
+.eda-loading {
+    display: flex;
+    align-items: center;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    padding: 0.5rem 0;
+}
+.eda-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+.eda-plot-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.25rem;
+    height: 500px;
+    display: flex;
+    flex-direction: column;
+}
+.eda-img {
+    width: 100%;
+    border-radius: 8px;
+    margin-top: 0.5rem;
+    flex: 1;
+    min-height: 0;
+    object-fit: contain;
+}
+
+/* ── metrics comparison ───────────────────────────────────── */
+.metrics-compare-panel {
+    background: var(--surface);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+/* ── overview card ────────────────────────────────────────── */
+.overview-card {
+    background: var(--surface);
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    padding: 1.75rem;
+    margin-top: 1.5rem;
+}
+.overview-card h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+    color: var(--text);
+}
+.overview-card h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin: 1.1rem 0 0.5rem;
+    color: #a78bfa;
+}
+.overview-card p {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin-bottom: 0.5rem;
+}
+.overview-card ul, .overview-card ol {
+    padding-left: 1.25rem;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    line-height: 1.8;
+}
+.overview-card li strong { color: var(--text); }
+
+/* ── project header ───────────────────────────────────────── */
+.back-link:hover { color: #a78bfa; }
+
+.main-card {
+    background: var(--surface);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    padding: 1.75rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+}
+
+/* ── data info strip ──────────────────────────────────────── */
+.data-strip {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+    padding: 0.75rem 1rem;
+    background: rgba(124, 58, 237, 0.06);
+    border: 1px solid rgba(124, 58, 237, 0.2);
+    border-radius: 10px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+.data-strip span strong { color: var(--text); }
+@media (max-width: 600px) {
+    .data-strip { flex-direction: column; gap: 0.5rem; }
+    .eda-plot-card { height: 280px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-work-life-regression">
+
+<div class="project-header">
+    <a class="back-link" href="{{ url_for('projects') }}">&#8592; Projects</a>
+    <h1>Longevity Prediction</h1>
+    <p class="subtitle">Predict lifespan from daily lifestyle habits &mdash; Random Forest, Gradient Boosting, Ridge &amp; Lasso with GridSearchCV</p>
+</div>
+
+<div class="main-card">
+
+    <!-- Model toggle + re-run -->
+    <div class="controls-bar">
+        <div class="model-toggle">
+            <button class="model-btn active" data-model="random_forest">Random Forest</button>
+            <button class="model-btn" data-model="gradient_boosting">Gradient Boosting</button>
+            <button class="model-btn" data-model="ridge">Ridge</button>
+            <button class="model-btn" data-model="lasso">Lasso</button>
+        </div>
+        <button class="btn-rerun" id="btnRerun">&#8635;&nbsp; Re-run</button>
+    </div>
+
+    <!-- Run status -->
+    <div class="run-row">
+        <span class="run-status visible" id="runStatus">
+            <span class="spinner visible" id="spinner"></span>
+            &nbsp;<span id="btnRunLabel">Training model&hellip; this may take 20&ndash;40 seconds.</span>
+        </span>
+    </div>
+
+    <!-- Results -->
+    <div class="results-section" id="resultsSection">
+
+        <!-- Data info -->
+        <div class="data-strip" id="dataStrip"></div>
+
+        <!-- Metric badges -->
+        <div class="metrics-row">
+            <div class="metric-badge purple">
+                <div class="badge-label">R&sup2; Score
+                    <span class="info-tip">
+                        <span class="tip-icon">?</span>
+                        <span class="tip-content">R² (coefficient of determination) measures how well the model explains variance in the target. 1.0 = perfect fit, 0 = predicts the mean, negative = worse than the mean.</span>
+                    </span>
+                </div>
+                <div class="badge-split">
+                    <span class="split-item">Test: <strong id="valR2Test">—</strong></span>
+                    <span class="split-divider">&bull;</span>
+                    <span class="split-item">Train: <strong id="valR2Train">—</strong></span>
+                </div>
+                <div class="badge-sub">1.0 = perfect fit</div>
+            </div>
+            <div class="metric-badge cyan">
+                <div class="badge-label">MAE
+                    <span class="info-tip">
+                        <span class="tip-icon">?</span>
+                        <span class="tip-content">Mean Absolute Error — average absolute difference between predicted and actual age at death, in years. Lower is better. Robust to outliers.</span>
+                    </span>
+                </div>
+                <div class="badge-split">
+                    <span class="split-item">Test: <strong id="valMAETest">—</strong></span>
+                    <span class="split-divider">&bull;</span>
+                    <span class="split-item">Train: <strong id="valMAETrain">—</strong></span>
+                </div>
+                <div class="badge-sub">Mean Absolute Error (years)</div>
+            </div>
+            <div class="metric-badge pink">
+                <div class="badge-label">MSE
+                    <span class="info-tip">
+                        <span class="tip-icon">?</span>
+                        <span class="tip-content">Mean Squared Error — average squared difference between predicted and actual values. Penalizes large errors more heavily than MAE. Lower is better.</span>
+                    </span>
+                </div>
+                <div class="badge-split">
+                    <span class="split-item">Test: <strong id="valMSETest">—</strong></span>
+                    <span class="split-divider">&bull;</span>
+                    <span class="split-item">Train: <strong id="valMSETrain">—</strong></span>
+                </div>
+                <div class="badge-sub">Mean Squared Error</div>
+            </div>
+            <div class="metric-badge yellow">
+                <div class="badge-label">RMSE
+                    <span class="info-tip">
+                        <span class="tip-icon">?</span>
+                        <span class="tip-content">Root Mean Squared Error — square root of MSE, expressed in the same units as the target (years). Easier to interpret than MSE. Lower is better.</span>
+                    </span>
+                </div>
+                <div class="badge-split">
+                    <span class="split-item">Test: <strong id="valRMSETest">—</strong></span>
+                    <span class="split-divider">&bull;</span>
+                    <span class="split-item">Train: <strong id="valRMSETrain">—</strong></span>
+                </div>
+                <div class="badge-sub">Root MSE (years)</div>
+            </div>
+        </div>
+
+        <!-- Actual vs Predicted + Feature Importance -->
+        <div class="charts-grid">
+            <div class="viz-panel">
+                <div class="viz-panel-title">Actual vs Predicted Age at Death
+                    <span class="info-tip">
+                        <span class="tip-icon">?</span>
+                        <span class="tip-content">Each point compares the true age at death (x-axis) to the model's prediction (y-axis). Points on the dashed yellow line are perfect predictions. Tighter clustering around the line means better accuracy.</span>
+                    </span>
+                </div>
+                <div class="chart-wrap">
+                    <canvas id="scatterChart"></canvas>
+                </div>
+            </div>
+            <div class="viz-panel">
+                <div class="viz-panel-title">Feature Importance
+                    <span class="info-tip">
+                        <span class="tip-icon">?</span>
+                        <span class="tip-content">For tree-based models, importance reflects how much each feature reduces prediction error across all splits. For Ridge/Lasso, it shows the absolute coefficient magnitude after scaling. Higher = more influential.</span>
+                    </span>
+                </div>
+                <div class="chart-wrap">
+                    <canvas id="importanceChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Metrics comparison: train vs test -->
+        <div class="metrics-compare-panel">
+            <div class="viz-panel-title">Train vs Test Metrics
+                <span class="info-tip">
+                    <span class="tip-icon">?</span>
+                    <span class="tip-content">Compares model performance on training data versus held-out test data. Large gaps between train and test indicate overfitting. R² bars may be small since the scale includes MAE/MSE/RMSE.</span>
+                </span>
+            </div>
+            <div class="chart-wrap-full">
+                <canvas id="metricsChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Residuals plots -->
+        <div class="charts-grid">
+            <div class="viz-panel">
+                <div class="viz-panel-title">Residuals vs Fitted
+                    <span class="info-tip">
+                        <span class="tip-icon">?</span>
+                        <span class="tip-content">Each point is one test sample: x = predicted age, y = actual − predicted. A well-behaved model shows points scattered randomly around the dashed zero line with no pattern. Funneling or curves indicate heteroscedasticity or non-linearity.</span>
+                    </span>
+                </div>
+                <img id="imgResiduals" class="diag-img" alt="Residuals vs Fitted">
+            </div>
+            <div class="viz-panel">
+                <div class="viz-panel-title">Residuals Distribution
+                    <span class="info-tip">
+                        <span class="tip-icon">?</span>
+                        <span class="tip-content">Histogram of residuals (actual − predicted). A good regression model produces residuals that are roughly normally distributed and centred near zero. Heavy tails or skew suggest systematic bias.</span>
+                    </span>
+                </div>
+                <img id="imgResidualsDist" class="diag-img" alt="Residuals Distribution">
+            </div>
+        </div>
+
+        <!-- Learning curve -->
+        <div class="metrics-compare-panel">
+            <div class="viz-panel-title">Learning Curve
+                <span class="info-tip">
+                    <span class="tip-icon">?</span>
+                    <span class="tip-content">Training R² and cross-validation R² plotted against increasing training set size. Shaded bands show ±1 std deviation across folds. A converging gap means the model generalises well; a persistent gap indicates overfitting that more data may help close.</span>
+                </span>
+            </div>
+            <div class="lc-loading" id="lcLoading">
+                <span class="spinner visible" style="border-color:rgba(124,58,237,0.3);border-top-color:#a78bfa;width:14px;height:14px;"></span>
+                &nbsp;Computing learning curve&hellip;
+            </div>
+            <img id="imgLearningCurve" class="diag-img" style="display:none;" alt="Learning Curve">
+        </div>
+
+    </div><!-- /results-section -->
+
+    <!-- EDA Plots (load independently) -->
+    <div class="eda-section" id="edaSection">
+        <div class="section-divider">
+            <span class="section-divider-title">Exploratory Data Analysis</span>
+            <span class="section-divider-line"></span>
+        </div>
+        <div class="eda-loading" id="edaLoading">
+            <span class="spinner visible" style="border-color:rgba(124,58,237,0.3);border-top-color:#a78bfa;width:14px;height:14px;"></span>
+            &nbsp;Loading plots&hellip;
+        </div>
+        <div class="eda-grid" id="edaGrid" style="display:none">
+            <div class="eda-plot-card">
+                <div class="viz-panel-title">Correlation Heatmap
+                    <span class="info-tip">
+                        <span class="tip-icon">?</span>
+                        <span class="tip-content">Lower-triangle Pearson correlations between all numeric features. Values near ±1 indicate strong linear relationships. Helps identify multicollinearity and features most correlated with age at death.</span>
+                    </span>
+                </div>
+                <img id="plotHeatmap" class="eda-img" alt="Correlation Heatmap">
+            </div>
+            <div class="eda-plot-card">
+                <div class="viz-panel-title">Age at Death by Occupation
+                    <span class="info-tip">
+                        <span class="tip-icon">?</span>
+                        <span class="tip-content">Stacked histogram showing the distribution of age at death broken down by occupation type. Reveals whether certain occupations are associated with longer or shorter lifespans.</span>
+                    </span>
+                </div>
+                <img id="plotHistogram" class="eda-img" alt="Stacked Histogram">
+            </div>
+            <div class="eda-plot-card">
+                <div class="viz-panel-title">Mean Lifestyle Metrics by Occupation
+                    <span class="info-tip">
+                        <span class="tip-icon">?</span>
+                        <span class="tip-content">Dot plot comparing mean work, rest, sleep, and exercise hours alongside mean age at death for each occupation type, sorted by longevity. Shows which lifestyle patterns correlate with longer life.</span>
+                    </span>
+                </div>
+                <img id="plotPairgrid" class="eda-img" alt="PairGrid">
+            </div>
+        </div>
+    </div>
+</div><!-- /main-card -->
+
+<div class="overview-card">
+    <h3>README.md</h3>
+    <p>Regression pipeline predicting <strong>age at death</strong> from daily lifestyle habits on the <a href="https://www.kaggle.com/datasets/oluwatosinadewale/quality-of-life-data/data" target="_blank" rel="noopener">Quality of Life dataset</a> (10,000 samples). Switch between four models using the toggle &mdash; each runs GridSearchCV independently with results cached for instant switching. EDA plots load in parallel.</p>
+
+    <h4>Models</h4>
+    <ul>
+        <li><strong>Random Forest</strong> &mdash; GridSearch over <code>n_estimators</code>, <code>max_depth</code>, <code>min_samples_split</code></li>
+        <li><strong>Gradient Boosting</strong> &mdash; GridSearch over <code>n_estimators</code>, <code>learning_rate</code>, <code>max_depth</code></li>
+        <li><strong>Ridge</strong> &mdash; L2 regularization; GridSearch over <code>alpha</code></li>
+        <li><strong>Lasso</strong> &mdash; L1 regularization, promotes sparsity; GridSearch over <code>alpha</code></li>
+    </ul>
+
+    <h4>ML Pipeline</h4>
+    <ol>
+        <li><strong>Feature / label separation</strong> &mdash; drop <code>id</code>; target = <code>age_at_death</code></li>
+        <li><strong>Encoding</strong> &mdash; one-hot encode <code>gender</code> and <code>occupation_type</code></li>
+        <li><strong>Train / test split</strong> &mdash; 80 / 20, random_state=42</li>
+        <li><strong>Scaling</strong> &mdash; StandardScaler fit on train, transform applied to both sets</li>
+        <li><strong>GridSearchCV</strong> &mdash; 3-fold CV, scoring=R&sup2;, n_jobs=-1</li>
+        <li><strong>Evaluation</strong> &mdash; R&sup2;, MAE, MSE, RMSE reported for both train and test sets</li>
+        <li><strong>Diagnostics</strong> &mdash; residuals vs fitted, residuals distribution, and learning curve</li>
+    </ol>
+
+    <h4>EDA</h4>
+    <ul>
+        <li><strong>Correlation heatmap</strong> &mdash; lower-triangle Pearson correlations across all numeric features</li>
+        <li><strong>Stacked histogram</strong> &mdash; age at death distribution broken down by occupation type</li>
+        <li><strong>Dot plot</strong> &mdash; mean lifestyle metrics and age at death per occupation, sorted by longevity</li>
+    </ul>
+
+    <h4>Features</h4>
+    <ul>
+        <li><strong>avg_work_hours_per_day</strong> &mdash; daily hours worked</li>
+        <li><strong>avg_rest_hours_per_day</strong> &mdash; daily hours of rest</li>
+        <li><strong>avg_sleep_hours_per_day</strong> &mdash; daily hours of sleep</li>
+        <li><strong>avg_exercise_hours_per_day</strong> &mdash; daily hours of exercise</li>
+        <li><strong>gender</strong> &mdash; one-hot encoded</li>
+        <li><strong>occupation_type</strong> &mdash; one-hot encoded</li>
+    </ul>
+
+    <h4>Tech Stack</h4>
+    <ul>
+        <li><strong>scikit-learn</strong> &mdash; RandomForestRegressor, GradientBoostingRegressor, Ridge, Lasso, GridSearchCV, StandardScaler</li>
+        <li><strong>seaborn / matplotlib</strong> &mdash; correlation heatmap, stacked histogram, PairGrid dot plot</li>
+        <li><strong>pandas / numpy</strong> &mdash; data wrangling and preprocessing</li>
+        <li><strong>Chart.js</strong> &mdash; actual vs predicted scatter, feature importance, train/test metrics bar</li>
+        <li><strong>Flask</strong> &mdash; serves page, <code>/run?model=</code> and <code>/plots</code> API endpoints</li>
+    </ul>
+</div>
+
+</div><!-- /page -->
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('work_life_regression.static', filename='script.js') }}"></script>
+{% endblock %}
