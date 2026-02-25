@@ -25,6 +25,7 @@ PROJECT_META = {
     'category': 'Supervised Regression',
     'nav_group': 'Machine Learning',
     'tags': ['regression', 'gridsearchcv', 'random forest', 'gradient boosting', 'ridge', 'lasso'],
+    'screenshot': 'longevity_prediction.png',
 }
 
 bp = Blueprint(
